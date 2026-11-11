@@ -84,33 +84,18 @@ function intervalMs(interval) {
 }
 
 // ── engine ─────────────────────────────────────────────────────────────────
-// Imports estáticos limitados a @hermes/plugin-sdk, react e react/jsx-runtime,
-// então a engine entra por import dinâmico em runtime: cópia vendorizada ao
-// lado deste arquivo, CDN como fallback.
-const CANDIDATES = [
-  ['./vendor/openalgo-charts.mjs', './vendor/openalgo-charts.indicators.mjs'],
-  ['https://esm.sh/openalgo-charts@2.7.0', 'https://esm.sh/openalgo-charts@2.7.0/indicators'],
-]
+// Import ESTÁTICO e relativo do bundle vendorizado (2.7.0, Apache-2.0, zero
+// dependências). Estático de propósito: o loader do desktop recusa
+// especificadores com esquema de URL (https:, file:) e o lint de admissão
+// (`hermes plugins validate`) recusa qualquer import() dinâmico que não seja
+// react/@hermes/plugin-sdk — inclusive o relativo. Import relativo estático
+// passa nos dois e não depende de rede.
+import { createChart, AlertController } from './vendor/openalgo-charts.mjs'
+import { registerBuiltinIndicators } from './vendor/openalgo-charts.indicators.mjs'
 
-let libPromise = null
-function loadLibs() {
-  if (libPromise) return libPromise
-  libPromise = (async () => {
-    const errors = []
-    for (const [baseSpec, indSpec] of CANDIDATES) {
-      try {
-        const base = await import(/* @vite-ignore */ baseSpec)
-        const ind = await import(/* @vite-ignore */ indSpec)
-        ind.registerBuiltinIndicators()
-        return { base, ind, source: baseSpec }
-      } catch (err) {
-        errors.push(`${baseSpec}: ${err && err.message ? err.message : String(err)}`)
-      }
-    }
-    throw new Error('Nenhum bundle disponível → ' + errors.join(' | '))
-  })()
-  return libPromise
-}
+registerBuiltinIndicators()
+
+const ENGINE_LABEL = 'vendor openalgo-charts 2.7.0'
 
 // ── feeds ──────────────────────────────────────────────────────────────────
 async function fetchBars(sourceId, base, interval, limit = 400) {
@@ -170,30 +155,20 @@ function ChartView(props) {
   const boxRef = useRef(null)
   const chartRef = useRef(null)
   const seriesRef = useRef(null)
-  const [lib, setLib] = useState(null)
   const [error, setError] = useState(null)
   const [status, setStatus] = useState('carregando motor…')
   const [series, setSeries] = useState(null)
 
-  // 1. engine
+  // 1. instância do chart
   useEffect(() => {
-    let alive = true
-    loadLibs()
-      .then((l) => {
-        if (alive) setLib(l)
-      })
-      .catch((err) => {
-        if (alive) setError(err.message || String(err))
-      })
-    return () => {
-      alive = false
+    if (!boxRef.current) return undefined
+    let chart
+    try {
+      chart = createChart(boxRef.current)
+    } catch (err) {
+      setError(err.message || String(err))
+      return undefined
     }
-  }, [])
-
-  // 2. instância do chart
-  useEffect(() => {
-    if (!lib || !boxRef.current) return undefined
-    const chart = lib.base.createChart(boxRef.current)
     chartRef.current = chart
     const s = chart.addSeries('candlestick')
     seriesRef.current = s
@@ -205,7 +180,7 @@ function ChartView(props) {
       // sem os built-ins os candles ainda desenham
       console.warn('[openalgo-charts] indicator add failed', err)
     }
-    const alerts = new lib.base.AlertController(chart)
+    const alerts = new AlertController(chart)
     if (alertsApi) {
       alertsApi.add = (cfg) => alerts.add(cfg)
       alertsApi.list = () => alerts.list()
@@ -240,7 +215,7 @@ function ChartView(props) {
       seriesRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lib])
+  }, [])
 
   // 3. dados + feed ao vivo
   useEffect(() => {
@@ -373,7 +348,7 @@ function ChartView(props) {
           jsx('span', { children: status }),
           jsx('span', {
             style: { marginLeft: 'auto' },
-            children: lib ? `engine: ${lib.source}` : '',
+            children: ENGINE_LABEL,
           }),
         ],
       }),
