@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>openalgo-charts — harness de verificação</title>
+<style>
+  body { margin: 0; background: #0b0e14; color: #cfd6e4; font: 12px ui-monospace, monospace; }
+  #chart { width: 1100px; height: 560px; }
+  #log { padding: 8px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<!--
+  Verificador do painel. Exercita a MESMA API que o plugin usa
+  (createChart -> addSeries -> setData -> addIndicator -> AlertController)
+  e os MESMOS feeds (Binance, Aster, Aster testnet, Hyperliquid,
+  Hyperliquid testnet), e escreve o resultado em #log.
+  Rodar: ./verify.sh  (chromium headless + --dump-dom + checagem de pixels)
+-->
+<div id="chart"></div>
+<div id="log">iniciando…</div>
+<script type="module">
+const out = { steps: [], errors: [], feeds: {}, ok: false, alertFired: false, emaOk: false };
+window.__result = out;
+const log = (m) => { out.steps.push(m); document.getElementById('log').textContent = out.steps.join('\n'); };
+
+const IV_MS = { '1m': 60000, '15m': 900000, '1h': 3600000, '1d': 86400000 };
+
+async function binanceLike(host, sym, iv, limit) {
+  const r = await fetch(`${host}/fapi/v1/klines?symbol=${sym}&interval=${iv}&limit=${limit}`, { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return (await r.json()).map(x => ({ time: Math.floor(x[0]/1000), open:+x[1], high:+x[2], low:+x[3], close:+x[4], volume:+x[5] }));
+}
+
+async function hyperliquid(host, coin, iv, limit) {
+  const startTime = Date.now() - limit * IV_MS[iv];
+  const r = await fetch(`${host}/info`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'candleSnapshot', req: { coin, interval: iv, startTime } }),
+    cache: 'no-store',
+  });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const rows = await r.json();
+  if (!Array.isArray(rows)) throw new Error('payload inesperado');
+  return rows.map(x => ({ time: Math.floor(x.t/1000), open:+x.o, high:+x.h, low:+x.l, close:+x.c, volume:+x.v }))
+             .sort((a,b) => a.time - b.time);
+}
+
+const FEEDS = {
+  'binance': () => binanceLike('https://fapi.binance.com', 'BTCUSDT', '15m', 200),
+  'aster': () => binanceLike('https://fapi.asterdex.com', 'BTCUSDT', '15m', 200),
+  'aster-testnet': () => binanceLike('https://fapi.asterdex-testnet.com', 'BTCUSDT', '15m', 200),
+  'hyperliquid': () => hyperliquid('https://api.hyperliquid.xyz', 'BTC', '15m', 200),
+  'hyperliquid-testnet': () => hyperliquid('https://api.hyperliquid-testnet.xyz', 'BTC', '15m', 200),
+};
+
+try {
+  const base = await import('../vendor/openalgo-charts.mjs');
+  const ind = await import('../vendor/openalgo-charts.indicators.mjs');
+  ind.registerBuiltinIndicators();
+  log('libs: createChart=' + typeof base.createChart + ' AlertController=' + typeof base.AlertController);
+
+  // 1. cada feed, isolado
+  for (const name of Object.keys(FEEDS)) {
+    try {
+      const bars = await FEEDS[name]();
+      out.feeds[name] = { bars: bars.length, last: bars[bars.length-1].close };
+      log(`feed ${name}: ${bars.length} barras, close ${bars[bars.length-1].close}`);
+    } catch (e) {
+      out.feeds[name] = { error: e.message };
+      out.errors.push(`${name}: ${e.message}`);
+      log(`feed ${name}: FALHOU (${e.message})`);
+    }
+  }
+
+  // 2. chart no feed da Hyperliquid (prova visual do DEX)
+  let bars = null;
+  if (out.feeds['hyperliquid'] && out.feeds['hyperliquid'].bars > 50) bars = await FEEDS['hyperliquid']();
+  else bars = await FEEDS['binance']();
+  log('chart usando ' + (out.feeds['hyperliquid'] && out.feeds['hyperliquid'].bars > 50 ? 'hyperliquid' : 'binance') + ' (' + bars.length + ' barras)');
+
+  const chart = base.createChart(document.getElementById('chart'));
+  const series = chart.addSeries('candlestick');
+  // Semeadura fiel ao live: descarta a barra possivelmente já fechada e
+  // injeta a barra do bucket atual (em formação) ainda abaixo do alvo.
+  // A confirmação do onBarClose vem do fechamento DESSA barra.
+  const IV = 900;
+  const bucket = Math.floor(Date.now() / 1000 / IV) * IV;
+  const closed = bars.filter(b => b.time < bucket);
+  const lastClosed = closed[closed.length - 1];
+  const target = +((lastClosed.close * 1.0005).toFixed(2));
+  const forming = { time: bucket, open: lastClosed.close, high: lastClosed.close, low: lastClosed.close, close: lastClosed.close };
+  series.setData([...closed.slice(-150), forming]);
+  chart.setDataContext({ symbol: 'BTC', exchange: 'HYPERLIQUID', interval: '15m' });
+  chart.timeScale.fitContent(140);
+  log('chart criado e dados aplicados');
+
+  try { chart.addIndicator('ema', { length: 9 }); chart.addIndicator('ema', { length: 21 }); out.emaOk = true; log('EMA 9/21 ok'); }
+  catch (e) { out.errors.push('ema: ' + e.message); log('EMA falhou: ' + e.message); }
+  try { chart.addIndicator('rsi', { length: 14 }); log('RSI ok'); }
+  catch (e) { out.errors.push('rsi: ' + e.message); log('RSI falhou: ' + e.message); }
+
+  const alerts = new base.AlertController(chart);
+  let fired = null;
+  chart.on('alert:triggered', p => { fired = p; log('ALERTA DISPARADO: ' + JSON.stringify({ title: p && p.title, price: p && p.price, time: p && p.time })); });
+  const last = forming;
+  const rec = alerts.add({ title: 'harness crossingUp', source: { kind: 'price', price: target }, condition: 'crossingUp', policy: 'onBarClose', repeat: 'once' });
+  log('alerta armado @ ' + target + ' id=' + (rec && rec.id));
+  // sonda: onTouch deve reagir ao próprio update que cruza
+  const probe = alerts.add({ title: 'probe onTouch', source: { kind: 'price', price: target }, condition: 'greaterThan', policy: 'onTouch', repeat: 'everyTime' });
+  log('sonda onTouch @ ' + target + ' id=' + (probe && probe.id));
+
+  // 1) a barra viva cruza o alvo  2) a barra seguinte fecha a que cruzou
+  series.update({ ...last, high: target + 50, close: target + 40 });
+  series.update({ time: last.time + IV, open: target + 40, high: target + 60, low: target + 30, close: target + 50 });
+  log('updates aplicados');
+
+  await new Promise(r => setTimeout(r, 2500));
+  const diag = (alerts.list() || []).map(a => ({ id: a.id, state: a.state, cond: a.condition, srcPrice: a.source && a.source.price, lastValue: a.lastValue }));
+  log('diag alertas: ' + JSON.stringify(diag));
+  log('diag availability: ' + JSON.stringify((alerts.list() || []).map(a => { try { return alerts.availability(a.id) } catch(e) { return String(e) } })));
+  out.alertFired = !!fired;
+  out.alertsList = (alerts.list() || []).map(a => ({ id: a.id, state: a.state }));
+
+  const feedsOk = Object.keys(FEEDS).every(n => out.feeds[n] && out.feeds[n].bars > 50);
+  out.feedsOk = feedsOk;
+  out.ok = feedsOk && out.emaOk && out.alertFired;
+  log('RESULTADO ok=' + out.ok + ' feedsOk=' + feedsOk + ' alertFired=' + out.alertFired);
+} catch (e) {
+  out.errors.push(String((e && e.stack) || e));
+  log('ERRO: ' + (e && e.message));
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+name: openalgo-charts
+version: "1.0.0"
+description: "Grafico de candles nativo no Hermes Desktop sobre OpenAlgo Charts 2.7.0 (vendorizado, Apache-2.0): pagina /openalgo-charts com 5 feeds publicos (Binance, Hyperliquid, HL testnet, Aster, Aster testnet), EMA/RSI, alertas de preco do AlertController e chip na barra de informacoes que abre a UI web do OpenAlgo. Sem chave, sem backend, sem servico extra."
+author: godaliens
+kind: standalone
+requires_hermes: ">=0.21.5"
+platforms: [linux, macos]
