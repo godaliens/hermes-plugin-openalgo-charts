@@ -32,6 +32,18 @@ alertas de preço do próprio engine.
   avaliados no fechamento da barra (`policy: 'onBarClose'`), entregues como toast +
   lista, persistidos em `ctx.storage` sob a chave `alerts`. Um alerta nunca envia ordem.
 
+## Instalar
+
+No app, com backend remoto: **Settings → Plugins → Install from Git** →
+`godaliens/hermes-plugin-openalgo-charts` → **marque o alvo `Desktop`**.
+
+O alvo importa: instalado só como backend, o cartão mostra
+`Desktop unavailable (remote backend)` e nada aparece na interface — o app não copia a metade
+desktop de um backend remoto, ele clona o repo na máquina da janela. Depois de instalar com
+alvo Desktop, ligue o toggle em Settings → Plugins (metade desktop entra opt-in).
+
+No CLI (backend): `hermes plugins install godaliens/hermes-plugin-openalgo-charts --enable`.
+
 ## Verificação (objetiva)
 
 ```bash
