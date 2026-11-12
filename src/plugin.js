@@ -43,7 +43,7 @@ registerBuiltinIndicators()
 
 const ID = 'openalgo-charts'
 const ROUTE = '/openalgo-charts'
-const VERSION = '1.2.0'
+const VERSION = '1.3.0'
 const BLURB =
   'Terminal de gráfico nativo (OpenAlgo Charts 2.7.0): candles e 112 indicadores, rail de ' +
   'desenhos, alertas, painéis Data/Objects e 5 feeds públicos — Binance, Hyperliquid, ' +
@@ -147,6 +147,69 @@ async function hyperliquidLike(hostUrl, coin, interval, limit) {
     .sort((a, b) => a.time - b.time)
 }
 
+/** 'D'/'1D' -> '1d', 'W' -> '1w' (tokens que as APIs entendem) */
+function normInterval(interval) {
+  const iv = String(interval || '1h')
+  if (iv === 'D' || iv === '1D') return '1d'
+  if (iv === 'W' || iv === '1W') return '1w'
+  return iv
+}
+
+/** Página anterior a `before` (UTC s), no dialeto de cada API. */
+async function loadBefore(sourceId, symbol, interval, before, want) {
+  const base = baseOf(symbol)
+  const endMs = (before - 1) * 1000
+
+  if (sourceId.startsWith('hyperliquid')) {
+    const startMs = endMs - want * intervalMs(interval)
+    const host =
+      sourceId === 'hyperliquid-testnet'
+        ? 'https://api.hyperliquid-testnet.xyz'
+        : 'https://api.hyperliquid.xyz'
+    const res = await fetch(`${host}/info`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'candleSnapshot',
+        req: { coin: base, interval, startTime: startMs, endTime: endMs },
+      }),
+      cache: 'no-store',
+    })
+    if (!res.ok) throw new Error(`hyperliquid page HTTP ${res.status}`)
+    const rows = await res.json()
+    if (!Array.isArray(rows)) return []
+    return rows
+      .map((r) => ({
+        time: Math.floor(r.t / 1000),
+        open: Number(r.o),
+        high: Number(r.h),
+        low: Number(r.l),
+        close: Number(r.c),
+        volume: Number(r.v),
+      }))
+      .sort((a, b) => a.time - b.time)
+  }
+
+  const host =
+    sourceId === 'binance'
+      ? 'https://fapi.binance.com'
+      : sourceId === 'aster'
+        ? 'https://fapi.asterdex.com'
+        : 'https://fapi.asterdex-testnet.com'
+  const url = `${host}/fapi/v1/klines?symbol=${encodeURIComponent(internalSymbol(sourceId, base))}&interval=${encodeURIComponent(interval)}&limit=${want}&endTime=${endMs}`
+  const res = await fetch(url, { cache: 'no-store' })
+  if (!res.ok) throw new Error(`page HTTP ${res.status}`)
+  const rows = await res.json()
+  return rows.map((r) => ({
+    time: Math.floor(r[0] / 1000),
+    open: Number(r[1]),
+    high: Number(r[2]),
+    low: Number(r[3]),
+    close: Number(r[4]),
+    volume: Number(r[5]),
+  }))
+}
+
 /** Um DataFeed por fonte, no contrato do engine (getBars/subscribeBars/searchSymbols). */
 function makeFeed(sourceId, onNote) {
   const src = sourceOf(sourceId)
@@ -160,13 +223,31 @@ function makeFeed(sourceId, onNote) {
     return hyperliquidLike('https://api.hyperliquid-testnet.xyz', base, interval, limit)
   }
 
+  // Tetos por API: Binance/Aster devolvem até 1500 klines por request;
+  // Hyperliquid aceita até 5000 velas por candleSnapshot.
+  const MAX_PAGE = sourceId.startsWith('hyperliquid') ? 5000 : 1500
+
   return {
     async getBars(req) {
-      const interval = req.interval === 'D' || req.interval === '1D' ? '1d' : req.interval === 'W' ? '1w' : req.interval
-      const limit = Math.min(1500, Math.max(120, req.countBack || 500))
+      const interval = normInterval(req.interval)
+      const limit = Math.min(MAX_PAGE, Math.max(120, req.countBack || 500))
       const bars = await load(req.symbol, interval, limit)
       onNote && onNote(`${bars.length} barras`)
       return bars
+    },
+
+    // Rolagem para trás: o widget pede a página anterior a `before`.
+    async getBarsPage(req) {
+      const interval = normInterval(req.interval)
+      const want = Math.min(MAX_PAGE, Math.max(120, req.countBack || 500))
+      const before = Number(req.before) || Math.floor(Date.now() / 1000)
+      const page = await loadBefore(sourceId, req.symbol, interval, before, want)
+      const older = page.filter((b) => b.time < before)
+      return {
+        bars: older,
+        hasMore: older.length >= want,
+        nextBefore: older.length ? older[0].time : undefined,
+      }
     },
 
     subscribeBars(req, onBar) {
@@ -259,6 +340,8 @@ function TerminalView(props) {
         chartType: 'candlestick',
         theme: 'dark',
         timezone: 'America/Sao_Paulo',
+        // salvaguarda tema, intervalos favoritos, indicadores, desenhos, painéis e tipo de série
+        persist: `openalgo-charts:${sourceId}`,
         panels: true,
         shortcutsEditor: true,
       })

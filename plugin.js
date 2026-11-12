@@ -28461,7 +28461,7 @@ init_openalgo_charts_widget();
 fa2();
 var ID = "openalgo-charts";
 var ROUTE = "/openalgo-charts";
-var VERSION = "1.2.0";
+var VERSION = "1.3.0";
 var BLURB = "Terminal de gr\xE1fico nativo (OpenAlgo Charts 2.7.0): candles e 112 indicadores, rail de desenhos, alertas, pain\xE9is Data/Objects e 5 feeds p\xFAblicos \u2014 Binance, Hyperliquid, HL testnet, Aster, Aster testnet. Sem chave, sem CDN, sem servi\xE7o extra.";
 var STORAGE_BANNER = "bannerHidden";
 var STORAGE_WEB = "webUrl";
@@ -28543,6 +28543,53 @@ async function hyperliquidLike(hostUrl, coin, interval, limit) {
     volume: Number(r5.v)
   })).sort((a3, b5) => a3.time - b5.time);
 }
+function normInterval(interval) {
+  const iv = String(interval || "1h");
+  if (iv === "D" || iv === "1D") return "1d";
+  if (iv === "W" || iv === "1W") return "1w";
+  return iv;
+}
+async function loadBefore(sourceId, symbol, interval, before, want) {
+  const base = baseOf(symbol);
+  const endMs = (before - 1) * 1e3;
+  if (sourceId.startsWith("hyperliquid")) {
+    const startMs = endMs - want * intervalMs(interval);
+    const host3 = sourceId === "hyperliquid-testnet" ? "https://api.hyperliquid-testnet.xyz" : "https://api.hyperliquid.xyz";
+    const res2 = await fetch(`${host3}/info`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "candleSnapshot",
+        req: { coin: base, interval, startTime: startMs, endTime: endMs }
+      }),
+      cache: "no-store"
+    });
+    if (!res2.ok) throw new Error(`hyperliquid page HTTP ${res2.status}`);
+    const rows2 = await res2.json();
+    if (!Array.isArray(rows2)) return [];
+    return rows2.map((r5) => ({
+      time: Math.floor(r5.t / 1e3),
+      open: Number(r5.o),
+      high: Number(r5.h),
+      low: Number(r5.l),
+      close: Number(r5.c),
+      volume: Number(r5.v)
+    })).sort((a3, b5) => a3.time - b5.time);
+  }
+  const host2 = sourceId === "binance" ? "https://fapi.binance.com" : sourceId === "aster" ? "https://fapi.asterdex.com" : "https://fapi.asterdex-testnet.com";
+  const url = `${host2}/fapi/v1/klines?symbol=${encodeURIComponent(internalSymbol(sourceId, base))}&interval=${encodeURIComponent(interval)}&limit=${want}&endTime=${endMs}`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`page HTTP ${res.status}`);
+  const rows = await res.json();
+  return rows.map((r5) => ({
+    time: Math.floor(r5[0] / 1e3),
+    open: Number(r5[1]),
+    high: Number(r5[2]),
+    low: Number(r5[3]),
+    close: Number(r5[4]),
+    volume: Number(r5[5])
+  }));
+}
 function makeFeed(sourceId, onNote) {
   const src = sourceOf(sourceId);
   async function load(symbol, interval, limit) {
@@ -28553,13 +28600,27 @@ function makeFeed(sourceId, onNote) {
     if (sourceId === "hyperliquid") return hyperliquidLike("https://api.hyperliquid.xyz", base, interval, limit);
     return hyperliquidLike("https://api.hyperliquid-testnet.xyz", base, interval, limit);
   }
+  const MAX_PAGE = sourceId.startsWith("hyperliquid") ? 5e3 : 1500;
   return {
     async getBars(req) {
-      const interval = req.interval === "D" || req.interval === "1D" ? "1d" : req.interval === "W" ? "1w" : req.interval;
-      const limit = Math.min(1500, Math.max(120, req.countBack || 500));
+      const interval = normInterval(req.interval);
+      const limit = Math.min(MAX_PAGE, Math.max(120, req.countBack || 500));
       const bars = await load(req.symbol, interval, limit);
       onNote && onNote(`${bars.length} barras`);
       return bars;
+    },
+    // Rolagem para trás: o widget pede a página anterior a `before`.
+    async getBarsPage(req) {
+      const interval = normInterval(req.interval);
+      const want = Math.min(MAX_PAGE, Math.max(120, req.countBack || 500));
+      const before = Number(req.before) || Math.floor(Date.now() / 1e3);
+      const page = await loadBefore(sourceId, req.symbol, interval, before, want);
+      const older = page.filter((b5) => b5.time < before);
+      return {
+        bars: older,
+        hasMore: older.length >= want,
+        nextBefore: older.length ? older[0].time : void 0
+      };
     },
     subscribeBars(req, onBar) {
       const interval = req.interval === "D" || req.interval === "1D" ? "1d" : req.interval === "W" ? "1w" : req.interval;
@@ -28643,6 +28704,8 @@ function TerminalView(props) {
         chartType: "candlestick",
         theme: "dark",
         timezone: "America/Sao_Paulo",
+        // salvaguarda tema, intervalos favoritos, indicadores, desenhos, painéis e tipo de série
+        persist: `openalgo-charts:${sourceId}`,
         panels: true,
         shortcutsEditor: true
       });
