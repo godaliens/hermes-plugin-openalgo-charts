@@ -78,10 +78,15 @@ try {
 
   const mount = document.getElementById('mount');
   const canvases = mount.querySelectorAll('canvas').length;
-  const text = (mount.innerText || '').replace(/\s+/g, ' ').slice(0, 220);
+  const widgetRoots = mount.querySelectorAll('.oac-widget').length;
+  const buttons = mount.querySelectorAll('button').length;
+  const rail = mount.querySelectorAll('[class*="rail"],[data-drawing-rail]').length;
+  const text = (mount.innerText || '').replace(/\s+/g, ' ').slice(0, 260);
   out.canvases = canvases;
+  out.widgetRoots = widgetRoots;
+  out.buttons = buttons;
   out.text = text;
-  log('canvas no mount: ' + canvases);
+  log('canvas no mount: ' + canvases + ' | .oac-widget: ' + widgetRoots + ' | botoes: ' + buttons + ' | rail: ' + rail);
   log('texto: ' + text);
 
   // chip isolado (segunda renderizacao, container proprio)
@@ -93,7 +98,7 @@ try {
   out.chipButtons = chipButtons;
   log('chip renderizou botoes: ' + chipButtons);
 
-  out.ok = canvases > 0 && chipButtons > 0;
+  out.ok = canvases > 0 && widgetRoots > 0 && buttons > 5 && chipButtons > 0;
   log('RESULTADO smoke ok=' + out.ok);
 } catch (e) {
   out.errors.push(String((e && e.stack) || e));
