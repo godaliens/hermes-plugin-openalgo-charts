@@ -10,8 +10,14 @@ alertas de preço do próprio engine.
   disponibilidade (fetch `no-cors` a cada 30 s: verde responde, vermelho não). A URL alterna
   entre tailnet (padrão, `http://100.117.110.100:5000`) e loopback da VPS pelo comando
   `OpenAlgo: alternar URL (tailnet / local)` — a escolha fica em `ctx.storage` (`webUrl`).
-- Motor: `vendor/openalgo-charts.mjs` + `vendor/openalgo-charts.indicators.mjs` (cópia do
-  pacote npm 2.7.0, vendorizada — nenhum CDN necessário)
+- Fonte: `src/plugin.js` (importa a engine de `vendor/`) → **build** gera o `plugin.js`
+  autocontido com a engine embutida. Motivo: o loader do desktop aceita **apenas**
+  `@hermes/plugin-sdk`, `react` e `react/jsx-runtime`; import relativo (`./vendor/...`) é
+  recusado em runtime com `unsupported imports`. `npm run build` faz esbuild + copia para
+  `desktop/plugin.js`.
+- Verificadores: `harness/verify.sh` (engine + 5 feeds + alerta em Chromium) e
+  `harness/smoke.html` (carrega o **bundle buildado** via import map com stub do SDK e prova
+  que ele avalia, registra as 6 contribuições e renderiza a página).
 - Feeds (todos públicos, sem chave, CORS `*` — verificados em 11/11/2026):
   - `binance` — `fapi.binance.com/fapi/v1/klines` + WS `fstream.binance.com`
   - `hyperliquid` — `POST api.hyperliquid.xyz/info` (`candleSnapshot`)
