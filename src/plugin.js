@@ -42,6 +42,7 @@ registerBuiltinIndicators()
 
 const ID = 'openalgo-charts'
 const ROUTE = '/openalgo-charts'
+const VERSION = '1.1.0'
 const STORAGE_WEB = 'webUrl'
 const STORAGE_SOURCE = 'feedSource'
 const POLL_MS = 12_000
@@ -359,6 +360,10 @@ function OpenAlgoPage(props) {
           ),
           jsx('span', {
             style: { marginLeft: 'auto', fontSize: 10, color: 'var(--ui-text-quaternary)' },
+            children: `v${VERSION} · tier widget`,
+          }),
+          jsx('span', {
+            style: { fontSize: 10, color: 'var(--ui-text-quaternary)' },
             children: note,
           }),
         ],

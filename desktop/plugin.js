@@ -28458,6 +28458,7 @@ init_openalgo_charts_widget();
 fa2();
 var ID = "openalgo-charts";
 var ROUTE = "/openalgo-charts";
+var VERSION = "1.1.0";
 var STORAGE_WEB = "webUrl";
 var STORAGE_SOURCE = "feedSource";
 var POLL_MS = 12e3;
@@ -28738,6 +28739,10 @@ function OpenAlgoPage(props) {
           ),
           jsx("span", {
             style: { marginLeft: "auto", fontSize: 10, color: "var(--ui-text-quaternary)" },
+            children: `v${VERSION} \xB7 tier widget`
+          }),
+          jsx("span", {
+            style: { fontSize: 10, color: "var(--ui-text-quaternary)" },
             children: note
           })
         ]

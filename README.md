@@ -44,6 +44,16 @@ alvo Desktop, ligue o toggle em Settings → Plugins (metade desktop entra opt-i
 
 No CLI (backend): `hermes plugins install godaliens/hermes-plugin-openalgo-charts --enable`.
 
+### Atualizar (observado na prática, 12/11/2026)
+
+**Rescan**, desativar/ativar e **Update** nao re-clonam a metade desktop: a copia em
+`~/.hermes/desktop-plugins/<id>/` continua na versao antiga. O caminho que funciona e
+**desinstalar e reinstalar** (Install from Git, alvo Desktop). Alternativa por terminal, se a
+copia tiver `.git`: `git -C ~/.hermes/desktop-plugins/openalgo-charts pull --ff-only`.
+
+Para saber qual build esta carregado, a pagina mostra `v<versao> · tier widget` no canto
+direito da faixa da fonte (`VERSION` em `src/plugin.js`, espelhado em `plugin.yaml`).
+
 ## Verificação (objetiva)
 
 ```bash
