@@ -357,7 +357,8 @@ function ChartView(props) {
 }
 
 // ── página ─────────────────────────────────────────────────────────────────
-function OpenAlgoPage() {
+function OpenAlgoPage(props) {
+  const { storage } = props
   const [base, setBase] = useState('BTC')
   const [sourceId, setSourceId] = useState('binance')
   const [interval, setInterval] = useState('1m')
@@ -371,18 +372,20 @@ function OpenAlgoPage() {
   const lastPrice = useValue($lastPrice)
 
   useEffect(() => {
-    host.storage
-      .get(STORAGE_ALERTS)
-      .then((saved) => {
-        if (Array.isArray(saved)) setTriggered(saved.slice(0, 30))
-      })
-      .catch(() => {})
+    // ctx.storage é SINCRONO: get(chave, default) devolve o valor, set() nao devolve promessa.
+    try {
+      const saved = storage.get(STORAGE_ALERTS, null)
+      if (Array.isArray(saved)) setTriggered(saved.slice(0, 30))
+    } catch (_) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const onTrigger = useCallback((ev) => {
     setTriggered((prev) => {
       const next = [ev, ...prev].slice(0, 30)
-      host.storage.set(STORAGE_ALERTS, next).catch(() => {})
+      try {
+        storage.set(STORAGE_ALERTS, next)
+      } catch (_) {}
       return next
     })
   }, [])
@@ -690,12 +693,10 @@ export default {
     }
 
     // Restaura a URL escolhida e registra a contribuição da barra.
-    ctx.storage
-      .get(STORAGE_WEB)
-      .then((saved) => {
-        if (saved === WEB_URLS.local || saved === WEB_URLS.tailnet) $webUrl.set(saved)
-      })
-      .catch(() => {})
+    try {
+      const saved = ctx.storage.get(STORAGE_WEB, null)
+      if (saved === WEB_URLS.local || saved === WEB_URLS.tailnet) $webUrl.set(saved)
+    } catch (_) {}
 
     ctx.register({
       id: 'status',
@@ -709,7 +710,7 @@ export default {
         id: 'page',
         area: ROUTES_AREA,
         data: { path: ROUTE },
-        render: () => jsx(OpenAlgoPage, {}),
+        render: () => jsx(OpenAlgoPage, { storage: ctx.storage }),
       },
       {
         id: 'nav',
@@ -756,7 +757,9 @@ export default {
           run: () => {
             const next = $webUrl.get() === WEB_URLS.local ? WEB_URLS.tailnet : WEB_URLS.local
             $webUrl.set(next)
-            ctx.storage.set(STORAGE_WEB, next).catch(() => {})
+            try {
+              ctx.storage.set(STORAGE_WEB, next)
+            } catch (_) {}
             host.notify({ kind: 'success', message: `OpenAlgo: ${next}` })
           },
         },

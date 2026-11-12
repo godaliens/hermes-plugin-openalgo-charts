@@ -12021,7 +12021,8 @@ function ChartView(props) {
     ]
   });
 }
-function OpenAlgoPage() {
+function OpenAlgoPage(props) {
+  const { storage } = props;
   const [base, setBase] = useState("BTC");
   const [sourceId, setSourceId] = useState("binance");
   const [interval, setInterval2] = useState("1m");
@@ -12034,16 +12035,19 @@ function OpenAlgoPage() {
   const alertsApi = useRef({});
   const lastPrice = useValue($lastPrice);
   useEffect(() => {
-    host.storage.get(STORAGE_ALERTS).then((saved) => {
+    try {
+      const saved = storage.get(STORAGE_ALERTS, null);
       if (Array.isArray(saved)) setTriggered(saved.slice(0, 30));
-    }).catch(() => {
-    });
+    } catch (_3) {
+    }
   }, []);
   const onTrigger = useCallback((ev) => {
     setTriggered((prev) => {
       const next = [ev, ...prev].slice(0, 30);
-      host.storage.set(STORAGE_ALERTS, next).catch(() => {
-      });
+      try {
+        storage.set(STORAGE_ALERTS, next);
+      } catch (_3) {
+      }
       return next;
     });
   }, []);
@@ -12326,10 +12330,11 @@ var plugin_default = {
         host.notify({ kind: "error", message: `Falha ao abrir: ${err.message || err}` });
       }
     };
-    ctx.storage.get(STORAGE_WEB).then((saved) => {
+    try {
+      const saved = ctx.storage.get(STORAGE_WEB, null);
       if (saved === WEB_URLS.local || saved === WEB_URLS.tailnet) $webUrl.set(saved);
-    }).catch(() => {
-    });
+    } catch (_3) {
+    }
     ctx.register({
       id: "status",
       area: STATUSBAR_AREAS.right,
@@ -12341,7 +12346,7 @@ var plugin_default = {
         id: "page",
         area: ROUTES_AREA,
         data: { path: ROUTE },
-        render: () => jsx(OpenAlgoPage, {})
+        render: () => jsx(OpenAlgoPage, { storage: ctx.storage })
       },
       {
         id: "nav",
@@ -12388,8 +12393,10 @@ var plugin_default = {
           run: () => {
             const next = $webUrl.get() === WEB_URLS.local ? WEB_URLS.tailnet : WEB_URLS.local;
             $webUrl.set(next);
-            ctx.storage.set(STORAGE_WEB, next).catch(() => {
-            });
+            try {
+              ctx.storage.set(STORAGE_WEB, next);
+            } catch (_3) {
+            }
             host.notify({ kind: "success", message: `OpenAlgo: ${next}` });
           }
         }

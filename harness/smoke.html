@@ -42,7 +42,18 @@ try {
   const ctx = {
     register: (c) => regs.push(c),
     registerMany: (arr) => arr.forEach((c) => regs.push(c)),
-    storage: { get: async () => null, set: async () => true },
+    storage: {
+      _d: {},
+      get(k, dflt = null) {
+        return k in this._d ? this._d[k] : dflt
+      },
+      set(k, v) {
+        this._d[k] = v
+      },
+      remove(k) {
+        delete this._d[k]
+      },
+    },
     os: { openExternal: async (u) => { out.steps.push('openExternal(' + u + ')'); return true; } },
     runAction: () => ({ ok: true }),
   };

@@ -32,14 +32,18 @@ const notifications = []
 export const host = {
   notify: (n) => notifications.push(n),
   navigate: (p) => notifications.push({ kind: 'navigate', message: p }),
+  // ctx.storage é SINCRONO no SDK real: get(chave, default) devolve valor, set() retorna void.
+  // Modelar como Promise aqui escondeu um bug real ("Cannot read properties of undefined (reading 'then')").
   storage: {
     _d: {},
-    get(k) {
-      return Promise.resolve(this._d[k] ?? null)
+    get(k, dflt = null) {
+      return k in this._d ? this._d[k] : dflt
     },
     set(k, v) {
       this._d[k] = v
-      return Promise.resolve(true)
+    },
+    remove(k) {
+      delete this._d[k]
     },
   },
   _notifications: notifications,
