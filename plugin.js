@@ -11789,6 +11789,13 @@ function intervalMs(interval) {
 }
 fa2();
 var ENGINE_LABEL = "vendor openalgo-charts 2.7.0";
+var STORAGE_IND = "indicators";
+var CATALOG = (Array.isArray(pa2) ? pa2 : Object.values(pa2 || {})).filter((d2) => d2 && d2.id).sort((a, b2) => String(a.name).localeCompare(String(b2.name)));
+var DEFAULT_INDICATORS = [
+  { id: "ema", inputs: { length: 9 } },
+  { id: "ema", inputs: { length: 21 } },
+  { id: "rsi", inputs: { length: 14 } }
+];
 async function fetchBars(sourceId, base, interval, limit = 400) {
   if (sourceId === "binance" || sourceId === "aster" || sourceId === "aster-testnet") {
     const host3 = sourceId === "binance" ? "https://fapi.binance.com" : sourceId === "aster" ? "https://fapi.asterdex.com" : "https://fapi.asterdex-testnet.com";
@@ -11827,13 +11834,14 @@ async function fetchBars(sourceId, base, interval, limit = 400) {
 }
 var $lastPrice = atom(0);
 function ChartView(props) {
-  const { base, sourceId, interval, alertsApi, onTrigger, bump } = props;
+  const { base, sourceId, interval, alertsApi, indicatorApi, initialIndicators, onTrigger, bump } = props;
   const boxRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState("carregando motor\u2026");
   const [series, setSeries] = useState(null);
+  const [indCount, setIndCount] = useState(0);
   useEffect(() => {
     if (!boxRef.current) return void 0;
     let chart;
@@ -11847,12 +11855,29 @@ function ChartView(props) {
     const s2 = chart.addSeries("candlestick");
     seriesRef.current = s2;
     setSeries(s2);
-    try {
-      chart.addIndicator("ema", { length: 9 });
-      chart.addIndicator("ema", { length: 21 });
-    } catch (err) {
-      console.warn("[openalgo-charts] indicator add failed", err);
-    }
+    const applyIndicators = (sel) => {
+      try {
+        for (const inst of chart.indicators()) {
+          try {
+            chart.removeIndicator(inst.id);
+          } catch (_3) {
+          }
+        }
+      } catch (_3) {
+      }
+      let n2 = 0;
+      for (const entry of sel || []) {
+        try {
+          chart.addIndicator(entry.id, entry.inputs || {});
+          n2 += 1;
+        } catch (err) {
+          console.warn("[openalgo-charts] addIndicator falhou", entry.id, err);
+        }
+      }
+      setIndCount(n2);
+    };
+    if (indicatorApi) indicatorApi.apply = applyIndicators;
+    applyIndicators(initialIndicators || DEFAULT_INDICATORS);
     const alerts = new Rd(chart);
     if (alertsApi) {
       alertsApi.add = (cfg) => alerts.add(cfg);
@@ -12012,6 +12037,7 @@ function ChartView(props) {
         },
         children: [
           jsx("span", { children: status }),
+          jsx("span", { children: `${indCount} indicadores` }),
           jsx("span", {
             style: { marginLeft: "auto" },
             children: ENGINE_LABEL
@@ -12033,7 +12059,30 @@ function OpenAlgoPage(props) {
   const [triggered, setTriggered] = useState([]);
   const [armed, setArmed] = useState([]);
   const alertsApi = useRef({});
+  const indicatorApi = useRef({});
   const lastPrice = useValue($lastPrice);
+  const [indicators, setIndicators] = useState(() => {
+    try {
+      const saved = storage.get(STORAGE_IND, null);
+      if (Array.isArray(saved)) return saved;
+    } catch (_3) {
+    }
+    return DEFAULT_INDICATORS;
+  });
+  const [showPicker, setShowPicker] = useState(false);
+  const [filter, setFilter] = useState("");
+  useEffect(() => {
+    if (indicatorApi.current.apply) indicatorApi.current.apply(indicators);
+    try {
+      storage.set(STORAGE_IND, indicators);
+    } catch (_3) {
+    }
+  }, [indicators]);
+  const toggleIndicator = useCallback((id) => {
+    setIndicators(
+      (prev) => prev.some((x2) => x2.id === id) ? prev.filter((x2) => x2.id !== id) : [...prev, { id, inputs: {} }]
+    );
+  }, []);
   useEffect(() => {
     try {
       const saved = storage.get(STORAGE_ALERTS, null);
@@ -12192,9 +12241,89 @@ function OpenAlgoPage(props) {
               },
               s2.id
             )
-          )
+          ),
+          jsxs("button", {
+            onClick: () => setShowPicker((v2) => !v2),
+            style: { ...segStyle(showPicker), marginLeft: "auto" },
+            children: [`indicadores (${indicators.length})`]
+          })
         ]
       }),
+      showPicker ? jsxs("div", {
+        style: {
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+          padding: "8px 12px",
+          borderBottom: "1px solid var(--ui-stroke-secondary)",
+          maxHeight: 210
+        },
+        children: [
+          jsxs("div", {
+            style: { display: "flex", gap: 8, alignItems: "center" },
+            children: [
+              jsx(Input, {
+                value: filter,
+                onChange: (e) => setFilter(e?.target?.value ?? e),
+                placeholder: "filtrar por nome (ex.: supertrend, vwap)",
+                style: { width: 260 }
+              }),
+              jsx("span", {
+                style: { fontSize: 10, color: "var(--ui-text-quaternary)" },
+                children: `${CATALOG.length} built-ins \xB7 ${indicators.length} ativos`
+              }),
+              jsx(Button, {
+                size: "sm",
+                onClick: () => setIndicators(DEFAULT_INDICATORS),
+                children: "padr\xE3o"
+              }),
+              jsx(Button, {
+                size: "sm",
+                onClick: () => setIndicators([]),
+                children: "limpar"
+              })
+            ]
+          }),
+          jsx("div", {
+            style: { overflowY: "auto", display: "flex", flexWrap: "wrap", gap: "2px 10px" },
+            children: CATALOG.filter((d2) => {
+              const q2 = filter.trim().toLowerCase();
+              if (!q2) return true;
+              return `${d2.id} ${d2.name} ${d2.category || ""}`.toLowerCase().includes(q2);
+            }).slice(0, 60).map((d2) => {
+              const on3 = indicators.some((x2) => x2.id === d2.id);
+              return jsxs(
+                "label",
+                {
+                  key: d2.id,
+                  style: {
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontSize: 11,
+                    cursor: "pointer",
+                    color: on3 ? "var(--ui-text-secondary)" : "var(--ui-text-quaternary)",
+                    minWidth: 128
+                  },
+                  children: [
+                    jsx("input", {
+                      type: "checkbox",
+                      checked: on3,
+                      onChange: () => toggleIndicator(d2.id)
+                    }),
+                    jsx("span", { children: d2.name }),
+                    jsx("span", {
+                      style: { fontSize: 9, opacity: 0.6 },
+                      children: d2.placement === "onchart" ? "pre\xE7o" : "painel"
+                    })
+                  ]
+                },
+                d2.id
+              );
+            })
+          })
+        ]
+      }) : null,
       jsx("div", {
         style: { flex: 1, minHeight: 0, position: "relative" },
         children: jsx(ChartView, {
@@ -12203,6 +12332,8 @@ function OpenAlgoPage(props) {
           interval,
           bump,
           alertsApi: alertsApi.current,
+          indicatorApi: indicatorApi.current,
+          initialIndicators: indicators,
           onTrigger
         })
       }),
@@ -12351,7 +12482,7 @@ var plugin_default = {
       {
         id: "nav",
         area: SIDEBAR_NAV_AREA,
-        data: { path: ROUTE, label: "OpenAlgo", codicon: "graph" }
+        data: { path: ROUTE, label: "OpenAlgo", codicon: "project", order: 30 }
       },
       {
         id: "cmd",
