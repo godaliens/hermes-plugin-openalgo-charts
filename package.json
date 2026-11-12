@@ -1,0 +1,12 @@
+{
+  "name": "hermes-plugin-openalgo-charts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gráfico OpenAlgo Charts no Hermes Desktop: fonte+engine viram um plugin.js autocontido",
+  "scripts": {
+    "build": "esbuild src/plugin.js --bundle --format=esm --target=es2020 --external:@hermes/plugin-sdk --external:react --external:react/jsx-runtime --outfile=plugin.js --log-level=warning && node tools/sync-desktop.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.0"
+  }
+}

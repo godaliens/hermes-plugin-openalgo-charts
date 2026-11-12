@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>openalgo-charts — smoke do bundLE (loader real)</title>
+<style>
+  body { margin: 0; background: #0b0e14; color: #cfd6e4; font: 12px ui-monospace, monospace; }
+  #mount { width: 1100px; height: 520px; }
+  #log { padding: 8px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<!--
+  Prova o que o harness anterior não provava: que o plugin.js BUILDADO
+  (um único arquivo, sem import relativo) avalia, registra as contribuições e
+  renderiza a página — com apenas os três especificadores que o loader aceita
+  (@hermes/plugin-sdk, react, react/jsx-runtime), resolvidos aqui por import map.
+-->
+<div id="mount"></div>
+<div id="log">iniciando…</div>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@19.2.0",
+    "react/jsx-runtime": "https://esm.sh/react@19.2.0/jsx-runtime",
+    "react-dom/client": "https://esm.sh/react-dom@19.2.0/client",
+    "@hermes/plugin-sdk": "./sdk-stub.mjs"
+  }
+}
+</script>
+<script type="module">
+const out = { steps: [], errors: [], ok: false, regs: [] };
+window.__result = out;
+const log = (m) => { out.steps.push(m); document.getElementById('log').textContent = out.steps.join('\n'); };
+
+try {
+  const mod = await import('../plugin.js');
+  const plugin = mod.default;
+  log('bundle avaliou: id=' + plugin.id + ' name=' + plugin.name);
+
+  const regs = [];
+  const ctx = {
+    register: (c) => regs.push(c),
+    registerMany: (arr) => arr.forEach((c) => regs.push(c)),
+    storage: { get: async () => null, set: async () => true },
+    os: { openExternal: async (u) => { out.steps.push('openExternal(' + u + ')'); return true; } },
+    runAction: () => ({ ok: true }),
+  };
+  plugin.register(ctx);
+  await new Promise((r) => setTimeout(r, 300));
+
+  out.regs = regs.map((r) => ({ id: r.id, area: r.area }));
+  log('registros: ' + JSON.stringify(out.regs));
+
+  const page = regs.find((r) => r.area === 'routes');
+  const chip = regs.find((r) => r.area === 'statusBar.right');
+  if (!page) throw new Error('sem contribuicao ROUTES');
+  if (!chip) throw new Error('sem chip na statusbar');
+
+  const React = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const root = createRoot(document.getElementById('mount'));
+  root.render(React.createElement(page.render));
+  log('pagina montada, aguardando dados do feed…');
+
+  await new Promise((r) => setTimeout(r, 9000));
+
+  const mount = document.getElementById('mount');
+  const canvases = mount.querySelectorAll('canvas').length;
+  const text = (mount.innerText || '').replace(/\s+/g, ' ').slice(0, 220);
+  out.canvases = canvases;
+  out.text = text;
+  log('canvas no mount: ' + canvases);
+  log('texto: ' + text);
+
+  // chip isolado (segunda renderizacao, container proprio)
+  const chipHost = document.createElement('div');
+  document.body.appendChild(chipHost);
+  createRoot(chipHost).render(React.createElement(chip.render));
+  await new Promise((r) => setTimeout(r, 1200));
+  const chipButtons = chipHost.querySelectorAll('button').length;
+  out.chipButtons = chipButtons;
+  log('chip renderizou botoes: ' + chipButtons);
+
+  out.ok = canvases > 0 && chipButtons > 0;
+  log('RESULTADO smoke ok=' + out.ok);
+} catch (e) {
+  out.errors.push(String((e && e.stack) || e));
+  log('ERRO: ' + (e && e.message));
+}
+</script>
+</body>
+</html>
