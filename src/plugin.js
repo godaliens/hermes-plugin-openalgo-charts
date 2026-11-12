@@ -35,6 +35,7 @@ import {
   useValue,
 } from '@hermes/plugin-sdk'
 
+import { BANNER } from './banner.js'
 import { registerBuiltinIndicators } from '../vendor/openalgo-charts.indicators.mjs'
 import { createWidget } from '../vendor/openalgo-charts.widget.mjs'
 
@@ -42,7 +43,12 @@ registerBuiltinIndicators()
 
 const ID = 'openalgo-charts'
 const ROUTE = '/openalgo-charts'
-const VERSION = '1.1.0'
+const VERSION = '1.2.0'
+const BLURB =
+  'Terminal de gráfico nativo (OpenAlgo Charts 2.7.0): candles e 112 indicadores, rail de ' +
+  'desenhos, alertas, painéis Data/Objects e 5 feeds públicos — Binance, Hyperliquid, ' +
+  'HL testnet, Aster, Aster testnet. Sem chave, sem CDN, sem serviço extra.'
+const STORAGE_BANNER = 'bannerHidden'
 const STORAGE_WEB = 'webUrl'
 const STORAGE_SOURCE = 'feedSource'
 const POLL_MS = 12_000
@@ -309,6 +315,20 @@ function OpenAlgoPage(props) {
     return 'binance'
   })
   const [note, setNote] = useState('')
+  const [showBanner, setShowBanner] = useState(() => {
+    try {
+      return storage.get(STORAGE_BANNER, false) !== true
+    } catch (_) {
+      return true
+    }
+  })
+
+  const hideBanner = useCallback(() => {
+    setShowBanner(false)
+    try {
+      storage.set(STORAGE_BANNER, true)
+    } catch (_) {}
+  }, [storage])
 
   const pickSource = useCallback(
     (id) => {
@@ -333,6 +353,59 @@ function OpenAlgoPage(props) {
   return jsxs('div', {
     style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 },
     children: [
+      showBanner
+        ? jsxs('div', {
+            style: { position: 'relative', flex: '0 0 auto', maxHeight: 132, overflow: 'hidden' },
+            children: [
+              jsx('img', {
+                src: BANNER,
+                alt: 'OpenAlgo Charts',
+                style: { width: '100%', height: 132, objectFit: 'cover', display: 'block' },
+              }),
+              jsxs('div', {
+                style: {
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'flex-end',
+                  padding: '10px 14px',
+                  background:
+                    'linear-gradient(to top, rgba(4,8,16,0.92), rgba(4,8,16,0.35) 55%, rgba(4,8,16,0))',
+                  color: '#e8eef7',
+                  pointerEvents: 'none',
+                },
+                children: [
+                  jsx('div', {
+                    style: { fontSize: 15, fontWeight: 600, lineHeight: 1.2 },
+                    children: `OpenAlgo Charts · v${VERSION}`,
+                  }),
+                  jsx('div', {
+                    style: { fontSize: 11, opacity: 0.85, maxWidth: 760, lineHeight: 1.35 },
+                    children: BLURB,
+                  }),
+                ],
+              }),
+              jsx('button', {
+                onClick: hideBanner,
+                title: 'Ocultar banner',
+                style: {
+                  position: 'absolute',
+                  top: 6,
+                  right: 8,
+                  padding: '1px 7px',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  borderRadius: 5,
+                  border: '1px solid rgba(255,255,255,0.35)',
+                  background: 'rgba(0,0,0,0.35)',
+                  color: '#fff',
+                },
+                children: '×',
+              }),
+            ],
+          })
+        : null,
       jsxs('div', {
         style: {
           display: 'flex',
@@ -358,8 +431,33 @@ function OpenAlgoPage(props) {
               s.id,
             ),
           ),
+          showBanner
+            ? null
+            : jsx('button', {
+                onClick: () => {
+                  setShowBanner(true)
+                  try {
+                    storage.set(STORAGE_BANNER, false)
+                  } catch (_) {}
+                },
+                style: {
+                  marginLeft: 'auto',
+                  fontSize: 10,
+                  cursor: 'pointer',
+                  border: '1px solid var(--ui-stroke-secondary)',
+                  borderRadius: 5,
+                  background: 'transparent',
+                  color: 'var(--ui-text-quaternary)',
+                  padding: '1px 6px',
+                },
+                children: 'mostrar banner',
+              }),
           jsx('span', {
-            style: { marginLeft: 'auto', fontSize: 10, color: 'var(--ui-text-quaternary)' },
+            style: {
+              marginLeft: showBanner ? 'auto' : 0,
+              fontSize: 10,
+              color: 'var(--ui-text-quaternary)',
+            },
             children: `v${VERSION} · tier widget`,
           }),
           jsx('span', {
